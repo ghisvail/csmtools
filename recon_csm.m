@@ -119,35 +119,81 @@ function [ csm_chan, csm_body ] = recon_csm( chan_raw, ...
 
     %% interpolation to reconstructed resolution
     fprintf('perform interpolation...\n')
-
-    if ~all(acq_res == rec_res)
-         inc_res = acq_res ./ rec_res;
-         old_shape = size(body_all);
-         new_shape = floor(old_shape .* inc_res);
-         
-         % malloc
-         csm_chan = zeros([new_shape nCoils]);
-         csm_body = zeros(new_shape);
-         
-         % perform Fourier interpolation on body coil data
-         ll = 1 + floor(new_shape / 2 .* (1 - 1 ./ inc_res));
-         rr = ll + old_shape - 1;
-         csm_body(ll(1):rr(1), ll(2):rr(2), ll(3):rr(3)) = itok(body_all);
-         csm_body = ktoi(csm_body);
-         
-         % perform Fourier interpolation on each channel
-         for iCoil = 1:nCoils
-             csm_chan(ll(1):rr(1), ll(2):rr(2), ll(3):rr(3), iCoil) = (...
-                     itok(chan_all(:, :, :, iCoil)));
-             csm_chan(:, :, :, iCoil) = (...
-                     ktoi(csm_chan(:, :, :, iCoil)));             
-         end
-    else
-         csm_body = body_all;
-         csm_chan = chan_all;
+    
+    csm_chan = chan_all;
+    csm_body = body_all;    
+    nDims = length(acq_res);
+    
+    for iDim = 1:nDims
+        old_res = acq_res(iDim);
+        new_res = rec_res(iDim);       
+        if new_res ~= old_res
+            ratio_res = new_res / old_res;
+            if ratio_res < 1
+                old_shape = size(csm_body);
+                new_shape = [ceil(old_shape(1)/ratio_res) old_shape(2:end)];
+ 
+                ll = 1 + floor(new_shape(1) / 2 .* (1 - ratio_res));
+                rr = ll + old_shape(1) - 1;
+                                
+                zpad_body = zeros(new_shape);
+                zpad_body(ll:rr, :, :) = itok(csm_body, 1);
+                csm_body = ktoi(zpad_body, 1);
+                
+                zpad_chan = zeros([new_shape, nCoils]);
+                for iCoil = 1:nCoils
+                    zpad_chan(ll:rr, :, :, iCoil) = (...
+                        itok(csm_chan(:, :, :, iCoil), 1));    
+                end
+                csm_chan = ktoi(zpad_chan, 1);
+            else
+                old_shape = size(csm_body);
+                new_shape = [ceil(old_shape(1)/ratio_res) old_shape(2:end)];
+                
+                ll = 1 + floor(old_shape(1) / 2 .* (1 - 1/ratio_res));
+                rr = ll + floor(new_shape(1)) - 1;                
+                
+                csm_body = itok(csm_body(ll:rr, :, :), 1);
+                csm_body = ktoi(csm_body, 1);               
+                
+                csm_chan = itok(csm_chan(ll:rr, :, :, :), 1);
+                csm_chan = ktoi(csm_chan, 1);             
+            end
+        end
+ 
+        csm_body = permute(csm_body, [2 3 1]);
+        csm_chan = permute(csm_chan, [2 3 1 4]);       
     end
 
     
+    %if ~all(acq_res == rec_res)
+         %inc_res = acq_res ./ rec_res;
+         %old_shape = size(body_all);
+         %new_shape = floor(old_shape .* inc_res);
+         
+         %% malloc
+         %csm_chan = zeros([new_shape nCoils]);
+         %csm_body = zeros(new_shape);
+         
+         %% perform Fourier interpolation on body coil data
+         %ll = 1 + floor(new_shape / 2 .* (1 - 1 ./ inc_res));
+         %rr = ll + old_shape - 1;
+         %csm_body(ll(1):rr(1), ll(2):rr(2), ll(3):rr(3)) = itok(body_all);
+         %csm_body = ktoi(csm_body);
+         
+         %% perform Fourier interpolation on each channel
+         %for iCoil = 1:nCoils
+             %csm_chan(ll(1):rr(1), ll(2):rr(2), ll(3):rr(3), iCoil) = (...
+                     %itok(chan_all(:, :, :, iCoil)));
+             %csm_chan(:, :, :, iCoil) = (...
+                     %ktoi(csm_chan(:, :, :, iCoil)));             
+         %end
+    %else
+         %csm_body = body_all;
+         %csm_chan = chan_all;
+    %end
+
+
     %% extract reconstructed FOV
     fprintf('extract ROI...\n')
     
